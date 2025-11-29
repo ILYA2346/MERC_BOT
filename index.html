@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Учёт мерча</title>
+  <style>
+    /* Стили авторизации */
+    .auth-modal {
+      display: flex;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.8);
+      z-index: 9999;
+      justify-content: center;
+      align-items: center;
+    }
+    .auth-container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 400px;
+    }
+    .auth-input {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      box-sizing: border-box;
+    }
+    .auth-btn {
+      width: 100%;
+      padding: 12px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 10px 0;
+    }
+    .auth-error {
+      color: #dc3545;
+      text-align: center;
+      margin: 10px 0;
+      display: none;
+    }
+    .logout-btn {
+      background: #6c757d;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      cursor: pointer;
+      margin-left: 10px;
+    }
+
+    /* Основные стили */
+    body { font: 14px Arial; margin: 20px; }
+    .tabs { margin: 15px 0; }
+    .tab {
+      display: inline-block;
+      padding: 10px 15px;
+      border: 1px solid #ccc;
+      cursor: pointer;
+      background: #f0f0f0;
+      margin-right: 5px;
+    }
+    .active { background: #007bff; color: white; border-color: #007bff; }
+    input, button { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    td, th { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    .total { background: #e9f7ef; padding: 10px; margin: 10px 0; }
+    .button-group { display: flex; gap: 10px; }
+    .button-group button { flex: 1; }
+    .main-content { display: none; }
+    .admin-only { display: none; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+  <!-- Авторизация -->
+  <div id="auth-modal" class="auth-modal">
+    <div class="auth-container">
+      <h2 style="text-align: center;">Вход в систему</h2>
+      <input type="text" id="auth-login" class="auth-input" placeholder="Логин">
+      <input type="password" id="auth-password" class="auth-input" placeholder="Пароль">
+      <div id="auth-error" class="auth-error">Неверный логин или пароль</div>
+      <button class="auth-btn" onclick="checkAuth()">Войти</button>
+      <button class="auth-btn" style="background: #28a745;" onclick="loginAsAdmin()">Войти как администратор</button>
+    </div>
+  </div>
+
+  <!-- Основной контент -->
+  <div id="main-content" class="main-content">
+    <h3>Учёт мерча</h3>
+
+    <div>
+      <button class="logout-btn" onclick="logout()">Выйти (<span id="current-user">Гость</span>)</button>
+    </div>
+
+    <!-- Вкладки -->
+    <div class="tabs">
+      <div class="tab active" onclick="showPanel(0)">Текущие</div>
+      <div class="tab" onclick="showPanel(1)">Архив</div>
+      <div class="tab" onclick="showPanel(2)">Кто взял</div>
+      <div class="tab" onclick="showPanel(3)">Завоз</div>
+      <div class="tab" onclick="showPanel(4)">Старый мерч</div>
+      <div class="tab" onclick="showPanel(5)">Отчет</div>
+      <div class="tab admin-only" onclick="showPanel(6)">Пользователи</div>
+    </div>
+
+    <!-- Панели -->
+    <div id="panel-0">
+      <input type="date" id="curr-date">
+      <input type="text" id="curr-name" placeholder="Наименование">
+      <input type="number" id="curr-qty" min="1" value="1" placeholder="Количество">
+      <div class="button-group">
+        <button onclick="addCurrent()">Добавить</button>
+        <button onclick="clearCurrentFields()">Очистить</button>
+      </div>
+      <div class="total">Всего новых: <span id="curr-total">0</span></div>
+      <table id="curr-table">
+        <tr><th>Дата</th><th>Наименование</th><th>Кол-во</th><th>Действие</th></tr>
+      </table>
+    </div>
+
+    <div id="panel-1" style="display:none">
+      <input type="date" id="arch-date">
+      <input type="text" id="arch-name" placeholder="Наименование">
+      <input type="number" id="arch-qty" min="1" value="1" placeholder="Количество">
+      <div class="button-group">
+        <button onclick="addToArchive()">Добавить в архив</button>
+        <button onclick="clearArchiveFields()">Очистить</button>
+      </div>
+      <div class="total">В архиве: <span id="arch-total">0</span></div>
+      <table id="arch-table">
+        <tr><th>Дата</th><th>Наименование</th><th>Кол-во</th><th>Действие</th></tr>
+      </table>
+    </div>
+
+    <div id="panel-2" style="display:none">
+      <input type="date" id="issue-date">
+      <input type="text" id="issue-item" placeholder="Что выдали">
+      <input type="number" id="issue-qty" min="1" value="1" placeholder="Количество">
+      <input type="text" id="issue-who" placeholder="Кому выдали">
+      <div class="button-group">
+        <button onclick="recordIssue()">Зафиксировать выдачу</button>
+        <button onclick="clearIssueFields()">Очистить</button>
+      </div>
+      <div class="total">
+        Остаток: новых <span id="remain-curr">0</span>,
+        архивных <span id="remain-arch">0</span>,
+        старых <span id="remain-old">0</span>
+      </div>
+      <table id="issue-table">
+        <tr><th>Дата</th><th>Что</th><th>Кол-во</th><th>Кому</th></tr>
+      </table>
+    </div>
+
+    <div id="panel-3" style="display:none">
+      <input type="date" id="import-date">
+      <input type="text" id="import-name" placeholder="Наименование">
+      <input type="number" id="import-plan" min="1" placeholder="Планировалось">
+      <input type="number" id="import-fact" min="1" placeholder="Прибыло">
+      <div class="button-group">
+        <button onclick="doImport()">Оформить завоз</button>
+        <button onclick="clearImportFields()">Очистить</button>
+      </div>
+      <div class="total">
+        Всего новых: <span id="import-total">0</span><br>
+        Разница: <span id="import-diff">0</span>
+      </div>
+    </div>
+
+    <div id="panel-4" style="display:none">
+      <input type="date" id="old-date">
+      <input type="text" id="old-name" placeholder="Наименование">
+      <input type="number" id="old-qty" min="1" value="1" placeholder="Количество">
+      <div class="button-group">
+        <button onclick="addOldMerch()">Добавить старый мерч</button>
+        <button onclick="clearOldFields()">Очистить</button>
+      </div>
+      <div class="total">Всего старого: <span id="old-total">0</span></div>
+      <table id="old-table">
+        <tr><th>Дата</th><th>Наименование</th><th>Кол-во</th><th>Действие</th></tr>
+      </table>
+    </div>
+
+    <div id="panel-5" style="display:none">
+      <button onclick="generatePDF()" style="background:#dc3545; color:white; padding:10px;">Скачать отчет PDF</button>
+      <div class="total" id="report-content"></div>
+    </div>
+
+    <div id="panel-6" style="display:none" class="admin-only">
+      <h4>Управление пользователями</h4>
+      <input type="text" id="new-login" placeholder="Новый логин">
+      <input type="password" id="new-password" placeholder="Новый пароль">
+      <div class="button-group">
+        <button onclick="addUser()">Добавить пользователя</button>
+        <button onclick="clearUserFields()">Очистить</button>
+      </div>
+      <table id="users-table">
+        <tr><th>Логин</th><th>Действие</th></tr>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // Система авторизации
+    const ADMIN_CREDENTIALS = { 
+      login: "ilagolod9577@mail.ru", 
+      password: "Ilay2008" 
+    };
+    const STORAGE_KEY_USERS = 'merchUsers';
+    const STORAGE_KEY_AUTH = 'merchAuth';
+
+    function getUsers() {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY_USERS) || '[]');
+    }
+
+    function saveUsers(users) {
+      localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+    }
+
+    function checkAuth() {
+      const login = document.getElementById('auth-login').value;
+      const password = document.getElementById('auth-password').value;
+      const errorElement = document.getElementById('auth-error');
+      
+      // Проверка обычных пользователей
+      const users = getUsers();
+      const user = users.find(u => u.login === login && u.password === password);
+      
+      if (user) {
+        loginSuccess(login, false);
+      } else {
+        errorElement.style.display = 'block';
+        document.getElementById('auth-password').value = '';
+      }
+    }
+
+    function loginAsAdmin() {
+      const login = prompt("Введите логин администратора:");
+      if (!login) return;
+      
+      const password = prompt("Введите пароль администратора:");
+      if (!password) return;
+      
+      // Проверка администратора
+      if (login === ADMIN_CREDENTIALS.login && password === ADMIN_CREDENTIALS.password) {
+        loginSuccess('Администратор', true);
+      } else {
+        alert("Неверные данные администратора! Доступ запрещен.");
+      }
+    }
+
+    function loginSuccess(login, isAdmin) {
+      localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify({ login, isAdmin }));
+      document.getElementById('auth-modal').style.display = 'none';
+      document.getElementById('main-content').style.display = 'block';
+      document.getElementById('current-user').textContent = login + (isAdmin ? ' (админ)' : '');
+      
+      if (isAdmin) {
+        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'inline-block');
+      }
+      
+      initializeApp();
+    }
+
+    function logout() {
+      localStorage.removeItem(STORAGE_KEY_AUTH);
+      location.reload();
+    }
+
+    function checkInitialAuth() {
+      const auth = JSON.parse(localStorage.getItem(STORAGE_KEY_AUTH) || 'null');
+      if (auth) {
+        loginSuccess(auth.login, auth.isAdmin);
+      } else {
+        document.getElementById('auth-modal').style.display = 'flex';
+      }
+    }
+
+    // Управление пользователями (только для админа)
+    function addUser() {
+      const login = document.getElementById('new-login').value;
+      const password = document.getElementById('new-password').value;
+      
+      if (!login || !password) {
+        alert('Заполните все поля');
+        return;
+      }
+      
+      const users = getUsers();
+      if (users.find(u => u.login === login)) {
+        alert('Пользователь с таким логином уже существует');
+        return;
+      }
+      
+      users.push({ login, password });
+      saveUsers(users);
+      renderUsers();
+      clearUserFields();
+      alert('Пользователь добавлен');
+    }
+
+    function deleteUser(login) {
+      if (confirm(`Удалить пользователя ${login}?`)) {
+        const users = getUsers().filter(u => u.login !== login);
+        saveUsers(users);
+        renderUsers();
+      }
+    }
+
+    function renderUsers() {
+      const users = getUsers();
+      const table = document.getElementById('users-table');
+      
+      while (table.rows.length > 1) {
+        table.deleteRow(1);
+      }
+      
+      users.forEach(user => {
+        const row = table.insertRow();
+        row.insertCell(0).textContent = user.login;
+        
+        const actionCell = row.insertCell(1);
+        const button = document.createElement('button');
+        button.textContent = 'Удалить';
+        button.onclick = () => deleteUser(user.login);
+        actionCell.appendChild(button);
+      });
+    }
+
+    function clearUserFields() {
+      document.getElementById('new-login').value = '';
+      document.getElementById('new-password').value = '';
+    }
+
+    // Основная логика приложения
+    const STORAGE_KEY_ITEMS = 'merchItems';
+    const STORAGE_KEY_ISSUED = 'merchIssued';
+
+    function getData(key) {
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    }
+
+    function saveData(key, data) {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+
+    function generateId() {
+      return Date.now() + Math.floor(Math.random() * 1000);
+    }
+
+    function showPanel(panelId) {
+      for (let i = 0; i < 7; i++) {
+        document.getElementById(`panel-${i}`).style.display = i === panelId ? 'block' : 'none';
+        document.querySelectorAll('.tab')[i].className = i === panelId ? 'tab active' : 'tab';
+      }
+      if (panelId === 5) generateReport();
+      if (panelId === 6) renderUsers();
+    }
+
+    // Функции очистки полей
+    function clearCurrentFields() { document.getElementById('curr-date').value = ''; document.getElementById('curr-name').value = ''; document.getElementById('curr-qty').value = '1'; }
+    function clearArchiveFields() { document.getElementById('arch-date').value = ''; document.getElementById('arch-name').value = ''; document.getElementById('arch-qty').value = '1'; }
+    function clearIssueFields() { document.getElementById('issue-date').value = ''; document.getElementById('issue-item').value = ''; document.getElementById('issue-qty').value = '1'; document.getElementById('issue-who').value = ''; }
+    function clearImportFields() { document.getElementById('import-date').value = ''; document.getElementById('import-name').value = ''; document.getElementById('import-plan').value = ''; document.getElementById('import-fact').value = ''; }
+    function clearOldFields() { document.getElementById('old-date').value = ''; document.getElementById('old-name').value = ''; document.getElementById('old-qty').value = '1'; }
+
+    // Обновление остатков
+    function updateRemainders() {
+      const items = getData(STORAGE_KEY_ITEMS);
+      const currentItems = items.filter(item => !item.archived && !item.old);
+      const archiveItems = items.filter(item => item.archived && !item.old);
+      const oldItems = items.filter(item => item.old);
+      
+      document.getElementById('curr-total').textContent = calculateTotal(currentItems);
+      document.getElementById('arch-total').textContent = calculateTotal(archiveItems);
+      document.getElementById('old-total').textContent = calculateTotal(oldItems);
+      document.getElementById('remain-curr').textContent = calculateTotal(currentItems);
+      document.getElementById('remain-arch').textContent = calculateTotal(archiveItems);
+      document.getElementById('remain-old').textContent = calculateTotal(oldItems);
+    }
+
+    function calculateTotal(items) {
+      return items.reduce((sum, item) => sum + item.qty, 0);
+    }
+
+    // Отображение таблиц
+    function renderCurrent() {
+      const items = getData(STORAGE_KEY_ITEMS).filter(item => !item.archived && !item.old);
+      const table = document.getElementById('curr-table');
+      
+      while (table.rows.length > 1) table.deleteRow(1);
+      
+      items.forEach(item => {
+        const row = table.insertRow();
+        row.insertCell(0).textContent = item.date;
+        row.insertCell(1).textContent = item.name;
+        row.insertCell(2).textContent = item.qty;
+        
+        const actionCell = row.insertCell(3);
+        const button = document.createElement('button');
+        button.textContent = 'В архив';
+        button.onclick = () => moveToArchive(item.id);
+        actionCell.appendChild(button);
+      });
+      
+      updateRemainders();
+    }
+
+    function renderArchive() {
+      const items = getData(STORAGE_KEY_ITEMS).filter(item => item.archived && !item.old);
+      const table = document.getElementById('arch-table');
+      
+      while (table.rows.length > 1) table.deleteRow(1);
+      
+      items.forEach(item => {
+        const row = table.insertRow();
+        row.insertCell(0).textContent = item.date;
+        row.insertCell(1).textContent = item.name;
+        row.insertCell(2).textContent = item.qty;
+        
+        const actionCell = row.insertCell(3);
+        const button = document.createElement('button');
+        button.textContent = 'Вернуть';
+        button.onclick = () => restoreFromArchive(item.id);
+        actionCell.appendChild(button);
+      });
+      
+      updateRemainders();
+    }
+
+    function renderOldMerch() {
+      const items = getData(STORAGE_KEY_ITEMS).filter(item => item.old);
+      const table = document.getElementById('old-table');
+      
+      while (table.rows.length > 1) table.deleteRow(1);
+      
+      items.forEach(item => {
+        const row = table.insertRow();
+        row.insertCell(0).textContent = item.date;
+        row.insertCell(1).textContent = item.name;
+        row.insertCell(2).textContent = item.qty;
+        
+        const actionCell = row.insertCell(3);
+        const button = document.createElement('button');
+        button.textContent = 'Удалить';
+        button.onclick = () => deleteOldMerch(item.id);
+        actionCell.appendChild(button);
+      });
+      
+      updateRemainders();
+    }
+
+    function renderIssued() {
+      const issued = getData(STORAGE_KEY_ISSUED);
+      const table = document.getElementById('issue-table');
+      
+      while (table.rows.length > 1) table.deleteRow(1);
+      
+      issued.forEach(record => {
+        const row = table.insertRow();
+        row.insertCell(0).textContent = record.date;
+        row.insertCell(1).textContent = record.item;
+        row.insertCell(2).textContent = record.qty;
+        row.insertCell(3).textContent = record.who;
+      });
+    }
+
+    // Основные операции
+    function addCurrent() {
+      const date = document.getElementById('curr-date').value;
+      const name = document.getElementById('curr-name').value;
+      const qty = parseInt(document.getElementById('curr-qty').value);
+      
+      if (!date || !name || !qty) return alert('Заполните все поля');
+      
+      const items = getData(STORAGE_KEY_ITEMS);
+      items.push({ id: generateId(), date, name, qty, archived: false, old: false });
+      saveData(STORAGE_KEY_ITEMS, items);
+      renderCurrent();
+      clearCurrentFields();
+    }
+
+    function addToArchive() {
+      const date = document.getElementById('arch-date').value;
+      const name = document.getElementById('arch-name').value;
+      const qty = parseInt(document.getElementById('arch-qty').value);
+      
+      if (!date || !name || !qty) return alert('Заполните все поля');
+      
+      const items = getData(STORAGE_KEY_ITEMS);
+      items.push({ id: generateId(), date, name, qty, archived: true, old: false });
+      saveData(STORAGE_KEY_ITEMS, items);
+      renderArchive();
+      clearArchiveFields();
+    }
+
+    function addOldMerch() {
+      const date = document.getElementById('old-date').value;
+      const name = document.getElementById('old-name').value;
+      const qty = parseInt(document.getElementById('old-qty').value);
+      
+      if (!date || !name || !qty) return alert('Заполните все поля');
+      
+      const items = getData(STORAGE_KEY_ITEMS);
+      items.push({ id: generateId(), date, name, qty, archived: false, old: true });
+      saveData(STORAGE_KEY_ITEMS, items);
+      renderOldMerch();
+      clearOldFields();
+    }
+
+    function moveToArchive(id) {
+      const items = getData(STORAGE_KEY_ITEMS);
+      const item = items.find(item => item.id === id);
+      if (item) {
+        item.archived = true;
+        saveData(STORAGE_KEY_ITEMS, items);
+        renderCurrent();
+        renderArchive();
+      }
+    }
+
+    function restoreFromArchive(id) {
+      const items = getData(STORAGE_KEY_ITEMS);
+      const item = items.find(item => item.id === id);
+      if (item) {
+        item.archived = false;
+        saveData(STORAGE_KEY_ITEMS, items);
+        renderCurrent();
+        renderArchive();
+      }
+    }
+
+    function deleteOldMerch(id) {
+      const items = getData(STORAGE_KEY_ITEMS);
+      const updatedItems = items.filter(item => item.id !== id);
+      saveData(STORAGE_KEY_ITEMS, updatedItems);
+      renderOldMerch();
+    }
+
+    function recordIssue() {
+      const date = document.getElementById('issue-date').value;
+      const itemName = document.getElementById('issue-item').value;
+      const qty = parseInt(document.getElementById('issue-qty').value);
+      const who = document.getElementById('issue-who').value;
+      
+      if (!date || !itemName || !qty || !who) return alert('Заполните все поля');
+      
+      const items = getData(STORAGE_KEY_ITEMS);
+      let remainingQty = qty;
+      
+      // Списываем товары
+      const allItems = items.filter(item => item.name === itemName).sort((a, b) => new Date(a.date) - new Date(b.date));
+      
+      for (let item of allItems) {
+        if (remainingQty <= 0) break;
+        if (item.qty <= remainingQty) {
+          remainingQty -= item.qty;
+          item.qty = 0;
+        } else {
+          item.qty -= remainingQty;
+          remainingQty = 0;
+        }
+      }
+      
+      const updatedItems = items.filter(item => item.qty > 0);
+      saveData(STORAGE_KEY_ITEMS, updatedItems);
+      
+      // Записываем выдачу
+      const issued = getData(STORAGE_KEY_ISSUED);
+      issued.push({ id: generateId(), date, item: itemName, qty, who });
+      saveData(STORAGE_KEY_ISSUED, issued);
+      
+      renderCurrent();
+      renderArchive();
+      renderOldMerch();
+      renderIssued();
+      clearIssueFields();
+    }
+
+    function doImport() {
+      const date = document.getElementById('import-date').value;
+      const name = document.getElementById('import-name').value;
+      const plan = parseInt(document.getElementById('import-plan').value);
+      const fact = parseInt(document.getElementById('import-fact').value);
+      
+      if (!date || !name || !plan || !fact) return alert('Заполните все поля');
+      
+      const items = getData(STORAGE_KEY_ITEMS);
+      items.push({ id: generateId(), date, name, qty: fact, archived: false, old: false });
+      saveData(STORAGE_KEY_ITEMS, items);
+      
+      const currentItems = items.filter(item => !item.archived && !item.old);
+      document.getElementById('import-total').textContent = calculateTotal(currentItems);
+      document.getElementById('import-diff').textContent = fact - plan;
+      
+      renderCurrent();
+      clearImportFields();
+    }
+
+    // Отчет
+    function generateReport() {
+      const items = getData(STORAGE_KEY_ITEMS);
+      const issued = getData(STORAGE_KEY_ISSUED);
+      
+      const currentItems = items.filter(item => !item.archived && !item.old);
+      const archiveItems = items.filter(item => item.archived && !item.old);
+      const oldItems = items.filter(item => item.old);
+      
+      const reportHTML = `
+        <h3>Отчет по мерчу</h3>
+        <p><strong>Дата:</strong> ${new Date().toLocaleDateString('ru-RU')}</p>
+        <p><strong>Новый мерч:</strong> ${calculateTotal(currentItems)} шт.</p>
+        <p><strong>Архивный мерч:</strong> ${calculateTotal(archiveItems)} шт.</p>
+        <p><strong>Старый мерч:</strong> ${calculateTotal(oldItems)} шт.</p>
+        <p><strong>Всего выдач:</strong> ${issued.length}</p>
+        <p><strong>Общее количество:</strong> ${calculateTotal(items)} шт.</p>
+      `;
+      
+      document.getElementById('report-content').innerHTML = reportHTML;
+    }
+
+    function generatePDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      
+      doc.setFontSize(20);
+      doc.text('ОТЧЕТ ПО МЕРЧУ', 105, 15, { align: 'center' });
+      doc.setFontSize(12);
+      doc.text(`Дата: ${new Date().toLocaleDateString('ru-RU')}`, 105, 25, { align: 'center' });
+      
+      const items = getData(STORAGE_KEY_ITEMS);
+      const issued = getData(STORAGE_KEY_ISSUED);
+      
+      const currentItems = items.filter(item => !item.archived && !item.old);
+      const archiveItems = items.filter(item => item.archived && !item.old);
+      const oldItems = items.filter(item => item.old);
+      
+      const data = [
+        ['Новый мерч', calculateTotal(currentItems)],
+        ['Архивный мерч', calculateTotal(archiveItems)],
+        ['Старый мерч', calculateTotal(oldItems)],
+        ['Всего выдач', issued.length],
+        ['Общее количество', calculateTotal(items)]
+      ];
+      
+      doc.autoTable({
+        startY: 35,
+        head: [['Параметр', 'Значение']],
+        body: data,
+        styles: { fontSize: 10 },
+        headStyles: { fillColor: [64, 64, 64] }
+      });
+      
+      doc.save(`отчет_мерч_${new Date().toISOString().split('T')[0]}.pdf`);
+    }
+
+    // Инициализация
+    function initializeApp() {
+      renderCurrent();
+      renderArchive();
+      renderOldMerch();
+      renderIssued();
+      updateRemainders();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('auth-password').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') checkAuth();
+      });
+      checkInitialAuth();
+    });
+  </script>
+</body>
+</html>
